@@ -2,6 +2,10 @@
 
 TUI to manage KEDA scale-to-zero schedules on Kubernetes. View cluster state and update CronJob schedules interactively. Supports multiple apps across namespaces.
 
+## Architecture
+
+![Architecture](docs/architecture.png)
+
 ## Prerequisites
 
 - Go 1.25+
