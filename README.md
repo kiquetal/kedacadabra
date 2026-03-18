@@ -332,6 +332,8 @@ go version -m kedacadabra
 
 ## How it works
 
+![Pause/Resume Sequence](docs/pause-resume-sequence.png)
+
 The TUI reads cluster state via `kubectl get` (CronJob schedules, ScaledObject paused annotation, deployment replicas). When you apply, it:
 
 1. Reads the app's schedule YAML from `schedules/<app>.yaml`
