@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      containers:
+      - name: demo-app
+        image: ghcr.io/stefanprodan/podinfo:6.5.3
+        ports:
+        - containerPort: 9898
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  namespace: apps
+  labels:
+    app: demo-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9898
+    targetPort: 9898
+    protocol: TCP
+    name: http
+  selector:
+    app: demo-app
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: demo-app
+  namespace: apps
+  labels:
+    app: demo-app
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: demo-app
+  endpoints:
+  - port: http
+    interval: 15s
