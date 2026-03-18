@@ -1,0 +1,17 @@
+apps:
+  - name: demo-app
+    namespace: apps
+    deployment: demo-app
+    scaledObject: demo-app-scaler
+    pauseCronJob: keda-pause-weekend
+    resumeCronJob: keda-resume-monday
+    yamlFile: schedules/demo-app.yaml
+
+  # Example: add more apps here
+  # - name: api-gateway
+  #   namespace: production
+  #   deployment: api-gateway
+  #   scaledObject: api-gateway-scaler
+  #   pauseCronJob: keda-pause-api-gateway
+  #   resumeCronJob: keda-resume-api-gateway
+  #   yamlFile: schedules/api-gateway.yaml
