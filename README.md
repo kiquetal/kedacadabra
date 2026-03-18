@@ -46,6 +46,8 @@ apps:
 
 ### 3. Generate the schedule manifests
 
+![Generate Flow](docs/generate-flow.png)
+
 ```bash
 go run . generate
 ```
