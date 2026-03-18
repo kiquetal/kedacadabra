@@ -70,28 +70,184 @@ go run .
 - A `ScaledObject` targeting that Deployment (KEDA must be installed)
 - The namespace must exist
 
-Then:
+### Example: adding `api-gateway` in the `production` namespace
 
-1. Add an entry to `kedacadabra.yaml`:
+**Step 0 — Cluster prerequisites (must already exist):**
 
 ```yaml
-  - name: my-service
-    namespace: my-namespace
-    deployment: my-service
-    scaledObject: my-service-scaler
-    pauseCronJob: keda-pause-my-service
-    resumeCronJob: keda-resume-my-service
-    yamlFile: schedules/my-service.yaml
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: ghcr.io/stefanprodan/podinfo:6.5.3
+        ports:
+        - containerPort: 9898
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+---
+# ScaledObject (KEDA)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api-gateway-scaler
+  namespace: production
+spec:
+  scaleTargetRef:
+    name: api-gateway
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
+      metricName: http_requests_rate
+      query: sum(rate(http_requests_total{namespace="production"}[1m]))
+      threshold: "10"
 ```
 
-2. Generate and apply:
+**Step 1 — Add to `kedacadabra.yaml`:**
+
+```yaml
+apps:
+  - name: demo-app
+    namespace: apps
+    deployment: demo-app
+    scaledObject: demo-app-scaler
+    pauseCronJob: keda-pause-weekend
+    resumeCronJob: keda-resume-monday
+    yamlFile: schedules/demo-app.yaml
+
+  - name: api-gateway
+    namespace: production
+    deployment: api-gateway
+    scaledObject: api-gateway-scaler
+    pauseCronJob: keda-pause-api-gateway
+    resumeCronJob: keda-resume-api-gateway
+    yamlFile: schedules/api-gateway.yaml
+```
+
+**Step 2 — Generate and apply:**
 
 ```bash
 go run . generate
-kubectl apply -f schedules/my-service.yaml
+# → created: schedules/api-gateway.yaml
 ```
 
-3. Run the TUI — your new app appears in the app selector.
+This generates `schedules/api-gateway.yaml` containing:
+
+```yaml
+# ServiceAccount — identity for CronJob pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keda-cronjob-sa
+  namespace: production
+---
+# Role — permission to get/patch ScaledObjects
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keda-cronjob-role
+  namespace: production
+rules:
+- apiGroups: ["keda.sh"]
+  resources: ["scaledobjects"]
+  verbs: ["get", "patch"]
+---
+# RoleBinding — binds the Role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keda-cronjob-rolebinding
+  namespace: production
+subjects:
+- kind: ServiceAccount
+  name: keda-cronjob-sa
+  namespace: production
+roleRef:
+  kind: Role
+  name: keda-cronjob-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Pause CronJob — annotates ScaledObject to scale to zero
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keda-pause-api-gateway
+  namespace: production
+spec:
+  schedule: "0 22 * * 5"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: keda-cronjob-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: kubectl
+            image: registry.k8s.io/kubectl:v1.32.0
+            command: ["kubectl", "annotate", "scaledobject",
+              "api-gateway-scaler", "-n", "production",
+              "autoscaling.keda.sh/paused-replicas=0", "--overwrite"]
+---
+# Resume CronJob — removes pause annotation to restore autoscaling
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keda-resume-api-gateway
+  namespace: production
+spec:
+  schedule: "0 6 * * 1"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: keda-cronjob-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: kubectl
+            image: registry.k8s.io/kubectl:v1.32.0
+            command: ["kubectl", "annotate", "scaledobject",
+              "api-gateway-scaler", "-n", "production",
+              "autoscaling.keda.sh/paused-replicas-", "--overwrite"]
+```
+
+Apply it:
+
+```bash
+kubectl apply -f schedules/api-gateway.yaml
+```
+
+**Step 3 — Run the TUI:**
+
+```bash
+go run .
+# Use ← / → to switch between demo-app and api-gateway
+```
 
 ## Verify the build
 
