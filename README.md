@@ -1,6 +1,6 @@
 # kedacadabra ⚡
 
-TUI to manage KEDA scale-to-zero schedules on Kubernetes. View cluster state and update CronJob schedules interactively.
+TUI to manage KEDA scale-to-zero schedules on Kubernetes. View cluster state and update CronJob schedules interactively. Supports multiple apps across namespaces.
 
 ## Prerequisites
 
@@ -8,21 +8,77 @@ TUI to manage KEDA scale-to-zero schedules on Kubernetes. View cluster state and
 - `kubectl` configured and pointing at your cluster
 - [KEDA](https://keda.sh) installed on the cluster
 
-## Setup the cluster resources
+## Quick start
 
-```bash
-kubectl apply -f namespace.yaml
-kubectl apply -f demo-app.yaml
-kubectl apply -f keda-scaledobject-prometheus.yaml
-kubectl apply -f keda-weekend-schedule.yaml
+### 1. Configure your apps
+
+Edit `kedacadabra.yaml` to define which apps to manage:
+
+```yaml
+apps:
+  - name: demo-app
+    namespace: apps
+    deployment: demo-app
+    scaledObject: demo-app-scaler
+    pauseCronJob: keda-pause-weekend
+    resumeCronJob: keda-resume-monday
+    yamlFile: schedules/demo-app.yaml
+
+  - name: api-gateway
+    namespace: production
+    deployment: api-gateway
+    scaledObject: api-gateway-scaler
+    pauseCronJob: keda-pause-api-gateway
+    resumeCronJob: keda-resume-api-gateway
+    yamlFile: schedules/api-gateway.yaml
 ```
 
-This creates:
-- `apps` namespace
-- `demo-app` Deployment + Service + ServiceMonitor
-- `demo-app-scaler` ScaledObject (Prometheus trigger)
-- `keda-pause-weekend` CronJob — annotates ScaledObject to scale to zero
-- `keda-resume-monday` CronJob — removes the pause annotation
+### 2. Generate the schedule manifests
+
+```bash
+go run . generate
+```
+
+This creates a YAML file per app under `schedules/` with:
+- ServiceAccount + Role + RoleBinding (RBAC for CronJobs to patch ScaledObjects)
+- Pause CronJob (annotates ScaledObject with `paused-replicas=0`)
+- Resume CronJob (removes the pause annotation)
+
+### 3. Apply to your cluster
+
+```bash
+kubectl apply -f schedules/demo-app.yaml
+kubectl apply -f schedules/api-gateway.yaml
+```
+
+### 4. Run the TUI
+
+```bash
+go run .
+```
+
+## Adding a new app
+
+1. Add an entry to `kedacadabra.yaml`:
+
+```yaml
+  - name: my-service
+    namespace: my-namespace
+    deployment: my-service
+    scaledObject: my-service-scaler
+    pauseCronJob: keda-pause-my-service
+    resumeCronJob: keda-resume-my-service
+    yamlFile: schedules/my-service.yaml
+```
+
+2. Generate and apply:
+
+```bash
+go run . generate
+kubectl apply -f schedules/my-service.yaml
+```
+
+3. Run the TUI — your new app appears in the app selector.
 
 ## Verify the build
 
@@ -41,23 +97,12 @@ file kedacadabra
 go version -m kedacadabra
 ```
 
-## Run the TUI
-
-```bash
-go run .
-```
-
-Or build and run:
-
-```bash
-go build -o kedacadabra .
-./kedacadabra
-```
-
 ## Keybindings
 
 | Key | Action |
 |---|---|
+| `→` / `l` | Next app |
+| `←` / `h` | Previous app |
 | `F1` | Relative mode — set pause/resume as minutes from now |
 | `F2` | Absolute mode — set weekday/hour/minute for each CronJob |
 | `Tab` / `Shift+Tab` | Navigate between input fields |
@@ -75,7 +120,22 @@ go build -o kedacadabra .
 
 The TUI reads cluster state via `kubectl get` (CronJob schedules, ScaledObject paused annotation, deployment replicas). When you apply, it:
 
-1. Reads `keda-weekend-schedule.yaml`
+1. Reads the app's schedule YAML from `schedules/<app>.yaml`
 2. Replaces the `schedule` fields with your new cron expressions
 3. Writes to a temp file and runs `kubectl apply -f`
 4. Updates the local YAML file to keep it in sync
+
+## Project structure
+
+```
+kedacadabra.yaml          # Config: list of apps to manage
+schedules/                # Generated schedule manifests (one per app)
+  demo-app.yaml
+main.go                   # Entry point: TUI or generate subcommand
+config.go                 # Config file loading
+generate.go               # Template-based manifest generation
+kube.go                   # kubectl interactions (fetch status, apply)
+cron.go                   # Time-to-cron conversion
+model.go                  # Bubble Tea model (state, update, keybindings)
+views.go                  # Bubble Tea view (rendering)
+```
