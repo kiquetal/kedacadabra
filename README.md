@@ -63,6 +63,15 @@ go run .
 
 ## Adding a new app
 
+![New App Guide](docs/new-app-guide.png)
+
+**Prerequisites in your cluster before adding an app:**
+- A `Deployment` running in some namespace
+- A `ScaledObject` targeting that Deployment (KEDA must be installed)
+- The namespace must exist
+
+Then:
+
 1. Add an entry to `kedacadabra.yaml`:
 
 ```yaml
