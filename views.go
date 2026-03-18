@@ -25,10 +25,28 @@ func (m Model) View() tea.View {
 	b.WriteString(titleStyle.Render("⚡ kedacadabra — KEDA Schedule Manager"))
 	b.WriteString("\n\n")
 
+	// App selector
+	if len(m.cfg.Apps) > 1 {
+		for i, app := range m.cfg.Apps {
+			label := fmt.Sprintf(" %s/%s ", app.Namespace, app.Name)
+			if i == m.appIdx {
+				b.WriteString(activeStyle.Render("▸ " + label))
+			} else {
+				b.WriteString(dimStyle.Render("  " + label))
+			}
+			b.WriteString("  ")
+		}
+		b.WriteString("\n\n")
+	}
+
 	// Status dashboard
+	app := m.app()
 	s := m.status
 	rows := fmt.Sprintf(
-		"%s %s\n%s %s\n%s %s\n%s %s",
+		"%s %s\n%s %s/%s\n%s %s\n%s %s\n%s %s\n%s %s",
+		labelStyle.Render("App:"), valueStyle.Render(app.Name),
+		labelStyle.Render("Namespace:"), valueStyle.Render(app.Namespace),
+		valueStyle.Render(app.Deployment),
 		labelStyle.Render("Pause schedule:"), valueStyle.Render(s.PauseSchedule),
 		labelStyle.Render("Resume schedule:"), valueStyle.Render(s.ResumeSchedule),
 		labelStyle.Render("Paused replicas:"), valueStyle.Render(s.PausedReplicas),
@@ -72,7 +90,7 @@ func (m Model) View() tea.View {
 
 	// Message
 	if m.loading {
-		b.WriteString(m.spinner.View() + " Applying...")
+		b.WriteString(m.spinner.View() + " Working...")
 	} else if m.msg != "" {
 		if m.msgErr {
 			b.WriteString(errStyle.Render(m.msg))
@@ -82,7 +100,6 @@ func (m Model) View() tea.View {
 	}
 	b.WriteString("\n\n")
 
-	// Help
 	b.WriteString(m.help.View(m.keys))
 	b.WriteString("\n")
 

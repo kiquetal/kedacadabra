@@ -21,6 +21,8 @@ const (
 
 // Model is the Bubble Tea application state.
 type Model struct {
+	cfg     Config
+	appIdx  int // current app index
 	mode    mode
 	focus   int
 	status  Status
@@ -31,12 +33,11 @@ type Model struct {
 	msgErr  bool
 	loading bool
 
-	// Relative mode: pause minutes, resume minutes
 	relInputs [2]textinput.Model
-
-	// Absolute mode: pause(weekday, hour, min), resume(weekday, hour, min)
 	absInputs [6]textinput.Model
 }
+
+func (m Model) app() AppConfig { return m.cfg.Apps[m.appIdx] }
 
 // Messages
 type statusMsg Status
@@ -51,11 +52,12 @@ func newInput(placeholder string, charLimit int) textinput.Model {
 	return t
 }
 
-func NewModel() Model {
+func NewModel(cfg Config) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
 	m := Model{
+		cfg:     cfg,
 		spinner: s,
 		help:    help.New(),
 		keys:    defaultKeyMap,
@@ -74,18 +76,19 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return fetchStatusCmd()
+	app := m.app()
+	return func() tea.Msg { return statusMsg(FetchStatus(app)) }
 }
 
-func fetchStatusCmd() tea.Cmd {
-	return func() tea.Msg {
-		return statusMsg(FetchStatus())
-	}
+func (m Model) fetchCmd() tea.Cmd {
+	app := m.app()
+	return func() tea.Msg { return statusMsg(FetchStatus(app)) }
 }
 
-func applyCmd(pauseCron, resumeCron string) tea.Cmd {
+func (m Model) applyCmd(pauseCron, resumeCron string) tea.Cmd {
+	app := m.app()
 	return func() tea.Msg {
-		return applyDoneMsg{err: ApplyCronSchedule(pauseCron, resumeCron)}
+		return applyDoneMsg{err: ApplyCronSchedule(app, pauseCron, resumeCron)}
 	}
 }
 
@@ -110,7 +113,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msg = "✓ Applied successfully"
 			m.msgErr = false
 		}
-		return m, tea.Batch(fetchStatusCmd(), clearMsgAfter(5*time.Second))
+		return m, tea.Batch(m.fetchCmd(), clearMsgAfter(5*time.Second))
 
 	case clearMsgMsg:
 		m.msg = ""
@@ -132,7 +135,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Refresh):
 			m.loading = true
-			return m, tea.Batch(m.spinner.Tick, fetchStatusCmd())
+			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
+
+		case key.Matches(msg, m.keys.NextApp):
+			m.appIdx = (m.appIdx + 1) % len(m.cfg.Apps)
+			m.loading = true
+			m.msg = ""
+			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
+
+		case key.Matches(msg, m.keys.PrevApp):
+			m.appIdx = (m.appIdx - 1 + len(m.cfg.Apps)) % len(m.cfg.Apps)
+			m.loading = true
+			m.msg = ""
+			return m, tea.Batch(m.spinner.Tick, m.fetchCmd())
 
 		case key.Matches(msg, m.keys.ModeRel):
 			m.mode = modeRelative
@@ -161,7 +176,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update focused input
 	cmd := m.updateFocusedInput(msg)
 	return m, cmd
 }
@@ -196,7 +210,7 @@ func (m *Model) handleApply() (tea.Model, tea.Cmd) {
 
 	m.loading = true
 	m.msg = ""
-	return m, tea.Batch(m.spinner.Tick, applyCmd(pauseCron, resumeCron))
+	return m, tea.Batch(m.spinner.Tick, m.applyCmd(pauseCron, resumeCron))
 }
 
 func (m *Model) blurAll() {
@@ -241,6 +255,8 @@ func (m *Model) updateFocusedInput(msg tea.Msg) tea.Cmd {
 type keyMap struct {
 	Quit     key.Binding
 	Refresh  key.Binding
+	NextApp  key.Binding
+	PrevApp  key.Binding
 	ModeRel  key.Binding
 	ModeAbs  key.Binding
 	Tab      key.Binding
@@ -249,7 +265,7 @@ type keyMap struct {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.ModeRel, k.ModeAbs, k.Tab, k.Apply, k.Refresh, k.Quit}
+	return []key.Binding{k.NextApp, k.PrevApp, k.ModeRel, k.ModeAbs, k.Tab, k.Apply, k.Refresh, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -259,6 +275,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 var defaultKeyMap = keyMap{
 	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	Refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+	NextApp:  key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next app")),
+	PrevApp:  key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev app")),
 	ModeRel:  key.NewBinding(key.WithKeys("f1"), key.WithHelp("F1", "relative")),
 	ModeAbs:  key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "absolute")),
 	Tab:      key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
