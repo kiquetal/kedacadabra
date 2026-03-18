@@ -24,6 +24,23 @@ This creates:
 - `keda-pause-weekend` CronJob — annotates ScaledObject to scale to zero
 - `keda-resume-monday` CronJob — removes the pause annotation
 
+## Verify the build
+
+```bash
+# Run tests
+go test -v ./...
+
+# Build the binary
+go build -o kedacadabra .
+
+# Check it
+file kedacadabra
+# → ELF 64-bit LSB executable, x86-64 ...
+
+# Inspect embedded dependencies
+go version -m kedacadabra
+```
+
 ## Run the TUI
 
 ```bash
