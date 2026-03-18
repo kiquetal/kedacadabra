@@ -66,27 +66,28 @@ go run .
 ![New App Guide](docs/new-app-guide.png)
 
 **Prerequisites in your cluster before adding an app:**
-- A `Deployment` running in some namespace
+- A `Namespace` (must already exist)
+- A `Deployment` running in that namespace
 - A `ScaledObject` targeting that Deployment (KEDA must be installed)
-- The namespace must exist
+- A `Service` + `ServiceMonitor` if the ScaledObject uses a Prometheus trigger
 
-### Example: adding `api-gateway` in the `production` namespace
+### Example: adding `api-gateway` in the `apps` namespace
 
 **Step 0 — Cluster prerequisites (must already exist):**
 
 ```yaml
-# Namespace
+# Namespace (reuse existing or create new)
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: production
+  name: apps
 ---
 # Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api-gateway
-  namespace: production
+  namespace: apps
 spec:
   replicas: 1
   selector:
@@ -107,12 +108,47 @@ spec:
             cpu: 100m
             memory: 64Mi
 ---
-# ScaledObject (KEDA)
+# Service (needed for ServiceMonitor / Prometheus scraping)
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: apps
+  labels:
+    app: api-gateway
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9898
+    targetPort: 9898
+    protocol: TCP
+    name: http
+  selector:
+    app: api-gateway
+---
+# ServiceMonitor (tells Prometheus to scrape this app)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-gateway
+  namespace: apps
+  labels:
+    app: api-gateway
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: api-gateway
+  endpoints:
+  - port: http
+    interval: 15s
+---
+# ScaledObject (KEDA — triggers autoscaling based on Prometheus metrics)
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: api-gateway-scaler
-  namespace: production
+  namespace: apps
 spec:
   scaleTargetRef:
     name: api-gateway
@@ -125,7 +161,7 @@ spec:
     metadata:
       serverAddress: http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
       metricName: http_requests_rate
-      query: sum(rate(http_requests_total{namespace="production"}[1m]))
+      query: sum(rate(http_requests_total{namespace="apps"}[1m]))
       threshold: "10"
 ```
 
@@ -142,7 +178,7 @@ apps:
     yamlFile: schedules/demo-app.yaml
 
   - name: api-gateway
-    namespace: production
+    namespace: apps
     deployment: api-gateway
     scaledObject: api-gateway-scaler
     pauseCronJob: keda-pause-api-gateway
@@ -165,14 +201,14 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: keda-cronjob-sa
-  namespace: production
+  namespace: apps
 ---
 # Role — permission to get/patch ScaledObjects
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: keda-cronjob-role
-  namespace: production
+  namespace: apps
 rules:
 - apiGroups: ["keda.sh"]
   resources: ["scaledobjects"]
@@ -183,11 +219,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: keda-cronjob-rolebinding
-  namespace: production
+  namespace: apps
 subjects:
 - kind: ServiceAccount
   name: keda-cronjob-sa
-  namespace: production
+  namespace: apps
 roleRef:
   kind: Role
   name: keda-cronjob-role
@@ -198,7 +234,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: keda-pause-api-gateway
-  namespace: production
+  namespace: apps
 spec:
   schedule: "0 22 * * 5"
   jobTemplate:
@@ -211,7 +247,7 @@ spec:
           - name: kubectl
             image: registry.k8s.io/kubectl:v1.32.0
             command: ["kubectl", "annotate", "scaledobject",
-              "api-gateway-scaler", "-n", "production",
+              "api-gateway-scaler", "-n", "apps",
               "autoscaling.keda.sh/paused-replicas=0", "--overwrite"]
 ---
 # Resume CronJob — removes pause annotation to restore autoscaling
@@ -219,7 +255,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: keda-resume-api-gateway
-  namespace: production
+  namespace: apps
 spec:
   schedule: "0 6 * * 1"
   jobTemplate:
@@ -232,7 +268,7 @@ spec:
           - name: kubectl
             image: registry.k8s.io/kubectl:v1.32.0
             command: ["kubectl", "annotate", "scaledobject",
-              "api-gateway-scaler", "-n", "production",
+              "api-gateway-scaler", "-n", "apps",
               "autoscaling.keda.sh/paused-replicas-", "--overwrite"]
 ```
 
