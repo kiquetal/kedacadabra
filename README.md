@@ -14,7 +14,14 @@ TUI to manage KEDA scale-to-zero schedules on Kubernetes. View cluster state and
 
 ## Quick start
 
-### 1. Configure your apps
+### 1. Apply the cluster prerequisites
+
+```bash
+kubectl apply -f manifests/namespace.yaml
+kubectl apply -f manifests/demo-app.yaml
+```
+
+### 2. Configure your apps
 
 Edit `kedacadabra.yaml` to define which apps to manage:
 
@@ -37,7 +44,7 @@ apps:
     yamlFile: schedules/api-gateway.yaml
 ```
 
-### 2. Generate the schedule manifests
+### 3. Generate the schedule manifests
 
 ```bash
 go run . generate
@@ -48,14 +55,14 @@ This creates a YAML file per app under `schedules/` with:
 - Pause CronJob (annotates ScaledObject with `paused-replicas=0`)
 - Resume CronJob (removes the pause annotation)
 
-### 3. Apply to your cluster
+### 4. Apply to your cluster
 
 ```bash
 kubectl apply -f schedules/demo-app.yaml
 kubectl apply -f schedules/api-gateway.yaml
 ```
 
-### 4. Run the TUI
+### 5. Run the TUI
 
 ```bash
 go run .
@@ -334,8 +341,16 @@ The TUI reads cluster state via `kubectl get` (CronJob schedules, ScaledObject p
 
 ```
 kedacadabra.yaml          # Config: list of apps to manage
+manifests/                # Cluster prerequisite manifests (apply before using TUI)
+  namespace.yaml          #   Namespace
+  demo-app.yaml           #   Deployment + Service + ServiceMonitor + ScaledObject
+  api-gateway.yaml        #   Same pattern for another app
 schedules/                # Generated schedule manifests (one per app)
-  demo-app.yaml
+  demo-app.yaml           #   ServiceAccount + Role + RoleBinding + 2 CronJobs
+  api-gateway.yaml
+docs/                     # Diagrams
+  architecture.png
+  new-app-guide.png
 main.go                   # Entry point: TUI or generate subcommand
 config.go                 # Config file loading
 generate.go               # Template-based manifest generation

@@ -59,3 +59,23 @@ spec:
   endpoints:
   - port: http
     interval: 15s
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: demo-app-scaler
+  namespace: apps
+spec:
+  scaleTargetRef:
+    name: demo-app
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
+      metricName: http_requests_rate
+      query: sum(rate(http_requests_total{namespace="apps",pod=~"demo-app.*"}[1m]))
+      threshold: "10"
