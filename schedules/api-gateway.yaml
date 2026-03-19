@@ -34,7 +34,7 @@ metadata:
   name: keda-pause-api-gateway
   namespace: apps
 spec:
-  schedule: "55 21 18 3 *"
+  schedule: "14 15 19 3 *"
   jobTemplate:
     spec:
       template:
@@ -60,7 +60,7 @@ metadata:
   name: keda-resume-api-gateway
   namespace: apps
 spec:
-  schedule: "57 21 18 3 *"
+  schedule: "16 15 19 3 *"
   jobTemplate:
     spec:
       template:
