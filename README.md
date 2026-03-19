@@ -341,6 +341,40 @@ The TUI reads cluster state via `kubectl get` (CronJob schedules, ScaledObject p
 3. Writes to a temp file and runs `kubectl apply -f`
 4. Updates the local YAML file to keep it in sync
 
+## Load testing
+
+To verify KEDA autoscaling is working, generate traffic from inside the cluster.
+
+**Simple loop (max throughput):**
+
+```bash
+kubectl run loadgen --rm -it --image=busybox -n apps -- sh -c 'while true; do wget -q -O- http://api-gateway.apps.svc:9898 > /dev/null 2>&1; done'
+```
+
+**Controlled load with [hey](https://github.com/rakyll/hey):**
+
+```bash
+kubectl run loadgen --rm -it --image=williamyeh/hey -n apps -- -c 50 -z 5m http://api-gateway.apps.svc:9898
+```
+
+- `-c 50` — 50 concurrent workers sending requests in parallel
+- `-z 5m` — run for 5 minutes
+- `-q N` — optional, limit each worker to N requests/sec
+
+Example with a gentle ramp (5 workers × 5 req/s = ~25 req/s):
+
+```bash
+kubectl run loadgen --rm -it --image=williamyeh/hey -n apps -- -c 5 -q 5 -z 5m http://api-gateway.apps.svc:9898
+```
+
+**Watch scaling in another terminal:**
+
+```bash
+kubectl get hpa keda-hpa-api-gateway-scaler -n apps -w
+```
+
+Hit `Ctrl+C` on the loadgen pod to stop — it auto-deletes (`--rm`).
+
 ## Project structure
 
 ```
